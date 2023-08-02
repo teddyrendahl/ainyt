@@ -8,11 +8,17 @@ pub struct Wordle {
     dictionary: HashSet<&'static str>,
 }
 
+impl Default for Wordle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Wordle {
     pub fn new() -> Self {
         Self {
             dictionary: HashSet::from_iter(DICTIONARY.lines().map(|l| {
-                l.split_once(" ")
+                l.split_once(' ')
                     .expect("Every line is word + space + frequency")
                     .0
             })),
@@ -20,7 +26,7 @@ impl Wordle {
     }
 
     // Play six rounds where it invokes the Guesser each round
-    pub fn play<G: Guesser>(&self, answer: &'static str, guesser: &G) -> Option<usize> {
+    pub fn play<G: Guesser>(&self, answer: &'static str, mut guesser: G) -> Option<usize> {
         let mut history = Vec::new();
         // Wordle only allows 6 guesses but we want to allow more so we can see the peformance tail in failure cases
         for i in 1..=32 {
@@ -56,7 +62,7 @@ impl Correctness {
             if c[i] == Correctness::Correct {
                 continue;
             }
-            if answer.chars().into_iter().enumerate().any(|(i, a)| {
+            if answer.chars().enumerate().any(|(i, a)| {
                 if g == a && !used[i] {
                     used[i] = true;
                     true
@@ -68,6 +74,17 @@ impl Correctness {
             }
         }
         c
+    }
+
+    pub fn permutations() -> impl Iterator<Item = [Self; 5]> {
+        itertools::iproduct!(
+            [Self::Correct, Self::Misplaced, Self::Wrong],
+            [Self::Correct, Self::Misplaced, Self::Wrong],
+            [Self::Correct, Self::Misplaced, Self::Wrong],
+            [Self::Correct, Self::Misplaced, Self::Wrong],
+            [Self::Correct, Self::Misplaced, Self::Wrong]
+        )
+        .map(|(a, b, c, d, e)| [a, b, c, d, e])
     }
 }
 
@@ -81,18 +98,55 @@ pub struct Guess {
     pub word: String,
     pub mask: [Correctness; 5],
 }
-pub trait Guesser {
-    fn guess(&self, history: &[Guess]) -> String;
-}
 
-impl Guesser for fn(history: &[Guess]) -> String {
-    fn guess(&self, history: &[Guess]) -> String {
-        (*self)(history)
+impl Guess {
+    pub fn matches(&self, word: &str) -> bool {
+        Correctness::compute(word, &self.word) == self.mask
     }
+}
+pub trait Guesser {
+    fn guess(&mut self, history: &[Guess]) -> String;
+}
+#[cfg(test)]
+macro_rules! mask {
+    (C) => {crate::Correctness::Correct};
+    (M) => {crate::Correctness::Misplaced};
+    (W) => {crate::Correctness::Wrong};
+    ($($c:tt)+) => {[$(mask!($c)),+]}
 }
 
 #[cfg(test)]
 mod tests {
+    mod guess_matches {
+        use crate::Guess;
+
+        macro_rules! check {
+            ($prev:literal + [$($mask:tt)+] allows $next:literal) => {
+                assert!(Guess {
+                    word: $prev.to_string(),
+                    mask: mask![$($mask)+]
+                }.matches($next))
+            };
+            ($prev:literal + [$($mask:tt)+] disallows $next:literal) => {
+                assert!(!Guess {
+                    word: $prev.to_string(),
+                    mask: mask![$($mask)+]
+                }.matches($next))
+            };
+        }
+
+        #[test]
+        fn matches() {
+            check!("abcde" + [C C C C C] allows "abcde");
+            check!("abcdf" + [C C C C C] disallows "abcde");
+            check!("abcde" + [W W W W W] allows "fghij");
+            check!("abcde" + [M M M M M] allows "eabcd");
+            check!("aaabb" + [C M W W W] disallows "accaa");
+            check!("baaaa" + [W C M W W] allows "aaccc");
+            check!("baaaa" + [W C M W W] disallows "caacc");
+            check!("abcde" + [W W W W W] disallows "bcdea");
+        }
+    }
     mod game {
         use crate::{Guess, Wordle};
 
@@ -100,7 +154,7 @@ mod tests {
             (|$history:ident| $impl:block) => {{
                 struct G;
                 impl $crate::Guesser for G {
-                    fn guess(&self, $history: &[Guess]) -> String {
+                    fn guess(&mut self, $history: &[Guess]) -> String {
                         $impl
                     }
                 }
@@ -111,7 +165,7 @@ mod tests {
         fn genius() {
             let wordle = Wordle::new();
             let guesser = guesser!(|_history| { "moved".to_string() });
-            assert_eq!(wordle.play("moved", &guesser), Some(1));
+            assert_eq!(wordle.play("moved", guesser), Some(1));
         }
 
         #[test]
@@ -124,7 +178,7 @@ mod tests {
                     "wrong".into()
                 }
             });
-            assert_eq!(wordle.play("right", &guesser), Some(2));
+            assert_eq!(wordle.play("right", guesser), Some(2));
         }
         #[test]
         fn impressive() {
@@ -136,7 +190,7 @@ mod tests {
                     "wrong".into()
                 }
             });
-            assert_eq!(wordle.play("right", &guesser), Some(3));
+            assert_eq!(wordle.play("right", guesser), Some(3));
         }
         #[test]
         fn splendid() {
@@ -148,7 +202,7 @@ mod tests {
                     "wrong".into()
                 }
             });
-            assert_eq!(wordle.play("right", &guesser), Some(4));
+            assert_eq!(wordle.play("right", guesser), Some(4));
         }
 
         #[test]
@@ -161,7 +215,7 @@ mod tests {
                     "wrong".into()
                 }
             });
-            assert_eq!(wordle.play("right", &guesser), Some(5));
+            assert_eq!(wordle.play("right", guesser), Some(5));
         }
 
         #[test]
@@ -174,25 +228,18 @@ mod tests {
                     "wrong".into()
                 }
             });
-            assert_eq!(wordle.play("right", &guesser), Some(6));
+            assert_eq!(wordle.play("right", guesser), Some(6));
         }
 
         #[test]
         fn oops() {
             let wordle = Wordle::new();
-            let guesser = guesser!(|history| { "wrong".into() });
-            assert_eq!(wordle.play("right", &guesser), None);
+            let guesser = guesser!(|_history| { "wrong".into() });
+            assert_eq!(wordle.play("right", guesser), None);
         }
     }
     mod correctness {
         use crate::Correctness;
-
-        macro_rules! mask {
-            (C) => {Correctness::Correct};
-            (M) => {Correctness::Misplaced};
-            (W) => {Correctness::Wrong};
-            ($($c:tt)+) => {[$(mask!($c)),+]}
-        }
 
         #[test]
         fn all_green() {

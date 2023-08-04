@@ -15,6 +15,7 @@ struct Opt {
 enum Implementation {
     Naive,
     Allocs,
+    VecRemain,
 }
 
 fn main() {
@@ -22,6 +23,7 @@ fn main() {
     match args.implementation {
         Implementation::Naive => play(wordle::algorithms::Naive::new, args.max),
         Implementation::Allocs => play(wordle::algorithms::Allocs::new, args.max),
+        Implementation::VecRemain => play(wordle::algorithms::VecRemain::new, args.max)
     }
 }
 

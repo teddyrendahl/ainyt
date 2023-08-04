@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use crate::{Correctness, Guess, Guesser};
 
@@ -50,7 +50,7 @@ impl Guesser for Naive {
                 let mut in_pattern_total = 0;
                 for candidate in self.remaining.keys() {
                     let g = Guess {
-                        word: word.to_string(),
+                        word: Cow::Owned(word.to_string()),
                         mask: pattern,
                     };
                     if g.matches(candidate) {

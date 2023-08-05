@@ -1,40 +1,29 @@
-use clap::{clap_derive::ArgEnum, Parser};
-use wordle::{Guesser, Wordle};
+use clap::Parser;
+use wordle::Wordle;
 
 const GAMES: &str = include_str!("../answers.txt");
 
 #[derive(Parser)]
 struct Opt {
-    #[clap(short, long, arg_enum)]
-    implementation: Implementation,
     #[clap(short, long)]
     max: Option<usize>,
 }
 
-#[derive(ArgEnum, Debug, Clone, Copy)]
-enum Implementation {
-    Naive,
-    Allocs,
-    VecRemain,
-}
-
 fn main() {
     let args = Opt::parse();
-    match args.implementation {
-        Implementation::Naive => play(wordle::algorithms::Naive::new, args.max),
-        Implementation::Allocs => play(wordle::algorithms::Allocs::new, args.max),
-        Implementation::VecRemain => play(wordle::algorithms::VecRemain::new, args.max)
-    }
-}
-
-fn play<G>(mut mk: impl FnMut() -> G, max: Option<usize>)
-where
-    G: Guesser,
-{
     let wordle = Wordle::new();
-    for answer in GAMES.split_whitespace().take(max.unwrap_or(usize::MAX)) {
-        let guesser = (mk)();
-        if let Some(score) = wordle.play(answer, guesser) {
+    for answer in GAMES
+        .split_whitespace()
+        .take(args.max.unwrap_or(usize::MAX))
+    {
+        let guesser = wordle::WordleSolver::new();
+        if let Some(score) = wordle.play(
+            answer
+                .as_bytes()
+                .try_into()
+                .expect("Answer must be 5 characters"),
+            guesser,
+        ) {
             println!("guesed {} in {}", answer, score);
         } else {
             eprintln!("failed to guess");

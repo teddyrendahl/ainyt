@@ -1,24 +1,28 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::borrow::Cow;
 
-use crate::{Correctness, Guess, Guesser};
+use crate::{Correctness, Guess, Guesser, Word};
 
-pub struct Naive {
-    remaining: HashMap<&'static str, usize>,
+pub struct WordleSolver {
+    remaining: Vec<(&'static Word, usize)>,
 }
 
-impl Default for Naive {
+impl Default for WordleSolver {
     fn default() -> Self {
         Self::new()
     }
 }
-impl Naive {
+impl WordleSolver {
     pub fn new() -> Self {
         Self {
-            remaining: HashMap::from_iter(crate::DICTIONARY.lines().map(|l| {
+            remaining: Vec::from_iter(crate::DICTIONARY.lines().map(|l| {
                 let (word, count) = l
                     .split_once(' ')
                     .expect("Every line is word + space + frequency");
                 let count: usize = count.parse().expect("every count is a number");
+                let word = word
+                    .as_bytes()
+                    .try_into()
+                    .expect("every dictionary  word is 5 characters");
                 (word, count)
             })),
         }
@@ -27,30 +31,30 @@ impl Naive {
 
 #[derive(Debug, Copy, Clone)]
 struct Candidate {
-    word: &'static str,
+    word: &'static Word,
     goodness: f64,
 }
 
-impl Guesser for Naive {
-    fn guess(&mut self, history: &[Guess]) -> String {
+impl Guesser for WordleSolver {
+    fn guess(&mut self, history: &[Guess]) -> Word {
         if history.is_empty() {
-            return "tares".into();
+            return *b"tares";
         }
         if let Some(last) = history.last() {
-            self.remaining.retain(|word, _count| last.matches(word));
+            self.remaining.retain(|(word, _count)| last.matches(word));
         }
-        let remaining_count: usize = self.remaining.iter().map(|(_, &c)| c).sum();
+        let remaining_count: usize = self.remaining.iter().map(|&(_, c)| c).sum();
 
         let mut best: Option<Candidate> = None;
-        for (&word, &count) in &self.remaining {
+        for &(word, _) in &self.remaining {
             // consider a world where we did guess word and got pattern
             // as the Correctness match. Now, compute what then is left.
             let mut sum = 0.0;
             for pattern in Correctness::permutations() {
                 let mut in_pattern_total = 0;
-                for candidate in self.remaining.keys() {
+                for (candidate, count) in &self.remaining {
                     let g = Guess {
-                        word: Cow::Owned(word.to_string()),
+                        word: Cow::Borrowed(word),
                         mask: pattern,
                     };
                     if g.matches(candidate) {
@@ -73,6 +77,6 @@ impl Guesser for Naive {
                 best = Some(Candidate { word, goodness })
             }
         }
-        best.unwrap().word.into()
+        *best.unwrap().word
     }
 }

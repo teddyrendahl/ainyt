@@ -4,6 +4,7 @@ use crate::{Correctness, Guess, Guesser, Word};
 
 pub struct WordleSolver {
     remaining: Vec<(&'static Word, usize)>,
+    patterns: Vec<[Correctness; 5]>,
 }
 
 impl Default for WordleSolver {
@@ -25,6 +26,7 @@ impl WordleSolver {
                     .expect("every dictionary  word is 5 characters");
                 (word, count)
             })),
+            patterns: Correctness::permutations().collect(),
         }
     }
 }
@@ -38,7 +40,7 @@ struct Candidate {
 impl Guesser for WordleSolver {
     fn guess(&mut self, history: &[Guess]) -> Word {
         if history.is_empty() {
-            return *b"tares";
+            return *b"crate";
         }
         if let Some(last) = history.last() {
             self.remaining.retain(|(word, _count)| last.matches(word));
@@ -46,28 +48,34 @@ impl Guesser for WordleSolver {
         let remaining_count: usize = self.remaining.iter().map(|&(_, c)| c).sum();
 
         let mut best: Option<Candidate> = None;
-        for &(word, _) in &self.remaining {
+        for &(word, count) in &self.remaining {
             // consider a world where we did guess word and got pattern
             // as the Correctness match. Now, compute what then is left.
             let mut sum = 0.0;
-            for pattern in Correctness::permutations() {
+            self.patterns.retain(|pattern| {
                 let mut in_pattern_total = 0;
-                for (candidate, count) in &self.remaining {
+                for (candidate, c) in &self.remaining {
                     let g = Guess {
                         word: Cow::Borrowed(word),
-                        mask: pattern,
+                        mask: *pattern,
                     };
                     if g.matches(candidate) {
-                        in_pattern_total += count;
+                        in_pattern_total += c;
                     }
                 }
                 if in_pattern_total == 0 {
-                    continue;
+                    return false;
                 }
+                // TODO: apply sigmoid
                 let p_of_pattern = in_pattern_total as f64 / remaining_count as f64;
                 sum += p_of_pattern * p_of_pattern.log2();
-            }
-            let goodness = -sum;
+                true
+            });
+            // This weights the "goodness" by the probability this is the answer.
+            // This can be removed and we will purely favor words that provide
+            // us more information
+            let p_word = count as f64 / remaining_count as f64;
+            let goodness = -sum * p_word;
             if let Some(c) = best {
                 // Is this one better
                 if goodness > c.goodness {

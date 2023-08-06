@@ -1,2 +1,5 @@
 [workspace]
 members = ["wordle"]
+
+[profile.test]
+opt-level = 3

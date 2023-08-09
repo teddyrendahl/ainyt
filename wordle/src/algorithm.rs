@@ -63,6 +63,9 @@ impl Guesser for WordleSolver {
                         in_pattern_total += c;
                     }
                 }
+                // If no remaining candidates match the pattern, we can eliminate it from our list.
+                // It is no longer a possibility that we get this pattern from a guess for
+                // the rest of the game.
                 if in_pattern_total == 0 {
                     return false;
                 }

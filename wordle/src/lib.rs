@@ -1,6 +1,7 @@
 use std::{borrow::Cow, collections::HashSet};
 pub mod algorithm;
 pub use algorithm::WordleSolver;
+pub mod web;
 
 const DICTIONARY: &str = include_str!("../dictionary.txt");
 
@@ -100,19 +101,6 @@ pub enum Correctness {
     Wrong,
 }
 
-impl TryFrom<char> for Correctness {
-    type Error = String;
-
-    fn try_from(value: char) -> Result<Self, Self::Error> {
-        match value {
-            'w' => Ok(Correctness::Wrong),
-            'm' => Ok(Correctness::Misplaced),
-            'c' => Ok(Correctness::Correct),
-            _ => Err(format!("Invalid Correctness specification {value}")),
-        }
-    }
-}
-
 pub struct Guess<'a> {
     pub word: Cow<'a, Word>,
     pub mask: [Correctness; 5],
@@ -125,45 +113,6 @@ impl Guess<'_> {
 }
 pub trait Guesser {
     fn guess(&mut self, history: &[Guess]) -> Word;
-}
-
-pub mod manual_entry {
-    use crate::Correctness;
-
-    /// Get a mask from a user via stdin
-    pub fn get_mask_input() -> std::io::Result<String> {
-        println!("Enter the result of the guess:");
-        let mut user_input = String::new();
-        let stdin = std::io::stdin();
-        stdin.read_line(&mut user_input)?;
-        Ok(user_input.to_ascii_lowercase())
-    }
-
-    pub fn mask_from_input(raw: String) -> Option<[Correctness; 5]> {
-        let c = raw
-            .chars()
-            .filter_map(|s| {
-                if s.is_whitespace() {
-                    return None;
-                }
-                match Correctness::try_from(s) {
-                    Ok(c) => Some(c),
-                    Err(e) => {
-                        println!("{e}");
-                        None
-                    }
-                }
-            })
-            .collect::<Vec<Correctness>>();
-        if c.len() != 5 {
-            println!(
-                "Must provide 5 valid Correctness specification: [C=Correct, M=Misplaced, W=Wrong]"
-            );
-            None
-        } else {
-            c.try_into().ok()
-        }
-    }
 }
 
 #[cfg(test)]

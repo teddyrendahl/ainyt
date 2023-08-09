@@ -11,12 +11,17 @@ static TILE_CSS: &str = "div[aria-roledescription=\"tile\"]";
 pub struct WordleWebDriver(WebDriver);
 
 impl WordleWebDriver {
-    pub async fn create() -> WebDriverResult<Self> {
+    pub async fn create(
+        chromedriver_server_url: &str,
+        binary_path: Option<&str>,
+    ) -> WebDriverResult<Self> {
         let mut options = ChromeCapabilities::new();
         options.add_chrome_arg("--incognito")?;
         options.add_chrome_arg("--start-maximized")?;
-        options.set_binary("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")?;
-        let driver = WebDriver::new("http://localhost:9515", options).await?;
+        if let Some(p) = binary_path {
+            options.set_binary(p)?;
+        }
+        let driver = WebDriver::new(chromedriver_server_url, options).await?;
         driver.goto(WORDLE_URL).await?;
         for button_cls in [
             "purr-blocker-card__button",

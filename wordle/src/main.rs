@@ -6,14 +6,26 @@ use wordle::web::WordleWebDriver;
 use wordle::{Correctness, Guess, Guesser};
 
 #[derive(Parser)]
-struct Opts {}
+struct Opts {
+    // Path to the Chrome binary. The 'thirtyfour' library will attempt to
+    // find the binary itself, but certain installations may require this
+    // to be passed explicitly.
+    #[clap(short, long)]
+    chrome_binary_path: Option<String>,
+    // URL of running chromedriver application
+    #[clap(short, long, default_value = "http://localhost:9515")]
+    chromedriver_server_url: String,
+}
 
 #[tokio::main]
 async fn main() {
-    let _opts = Opts::parse();
-    let driver = WordleWebDriver::create()
-        .await
-        .expect("Failed to create WebDriver");
+    let opts = Opts::parse();
+    let driver = WordleWebDriver::create(
+        &opts.chromedriver_server_url,
+        opts.chrome_binary_path.as_deref(),
+    )
+    .await
+    .expect("Failed to create WebDriver");
     let mut guesser = wordle::WordleSolver::new();
     let mut guess_history = Vec::new();
     for i in 1..=6 {

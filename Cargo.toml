@@ -1,5 +1,5 @@
 [workspace]
-members = ["wordle"]
+members = ["wordle", "crossword"]
 
 [profile.test]
 opt-level = 3

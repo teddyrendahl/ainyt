@@ -1,12 +1,15 @@
 # Wordle
 An automated Wordle solver written In Rust
 
+https://github.com/teddyrendahl/ainyt/assets/25753048/363853e2-3b85-42a9-9b2a-9ca525b6ba6c
+
 Inspired by two YouTube creators:
 
 * [3Blue1Brown](https://www.youtube.com/watch?v=v68zYyaEmEA) - The description of the algorithm used in this codebase.
 * [Jon Gjengset](https://www.youtube.com/watch?v=doFowk4xj7Q&t=14978s) - An implementation of the algorithm in Rust with discussions around reducing time complexity without threading.
-
+  
 # How To Use
+
 Wordle depends on a running instance of `chromedriver`. It is not built as part of this repository. By default, it is expected that `chromedriver` is running locally on port `9515`,
 but an alternate port can be passed in via the command line. If `chromedriver` is running then execute via:
 ```shell

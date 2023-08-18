@@ -1,5 +1,8 @@
 [workspace]
 members = ["wordle", "crossword"]
 
+[workspace.dependencies]
+tokio = {version = "1"}
+
 [profile.test]
 opt-level = 3

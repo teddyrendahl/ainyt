@@ -1,6 +1,9 @@
-use crossword::{Cell, Clue, Grid, Solver};
+use std::env::args;
 
-fn main() {
+use crossword::{Cell, Clue, GPTSolver, Grid};
+
+#[tokio::main]
+async fn main() {
     let grid = Grid {
         cells: [
             [
@@ -102,6 +105,11 @@ fn main() {
             text: "Make an effort".into(),
         },
     ];
-    let solver = Solver;
-    solver.solve(&grid, &clues);
+    let solver = GPTSolver::new(args().nth(1).unwrap()).expect("Unable to create GPT response");
+    grid.show();
+    solver
+        .solve(&grid, &clues)
+        .await
+        .expect("Failed to solve Crossword puzzle!");
+    grid.show();
 }

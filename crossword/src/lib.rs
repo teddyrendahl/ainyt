@@ -1,10 +1,62 @@
 use std::{cell::RefCell, rc::Rc};
 
-pub struct Solver;
+use chatgpt::prelude::ChatGPT;
 
-impl Solver {
-    pub fn solve<const W: usize, const H: usize>(&self, grid: &Grid<W, H>, clues: &[Clue]) {
-        todo!()
+/// Generate a ChatGPT prompt for a given Clue
+fn prompt_for_clue<const W: usize, const H: usize>(clue: &Clue, grid: &Grid<W, H>) -> String {
+    let cells = grid.cells_for_clue(clue);
+    let pattern = cells
+        .iter()
+        .map(|cell| match cell.fill() {
+            Fill::Empty => '_',
+            Fill::Filled(c) => c,
+            Fill::Shaded => panic!("Clue pattern should not have shaded cell"),
+        })
+        .collect::<String>();
+    format!(
+        "What is the answer to the crossword clue \"{}\". \
+             The answer is {} letters long with the pattern {}? \
+             Respond with just the answer",
+        clue.text,
+        cells.len(),
+        pattern
+    )
+}
+
+pub struct GPTSolver(ChatGPT);
+
+impl GPTSolver {
+    pub fn new(api_key: String) -> chatgpt::Result<Self> {
+        Ok(Self(ChatGPT::new(api_key)?))
+    }
+    pub async fn solve<const W: usize, const H: usize>(
+        &self,
+        grid: &Grid<W, H>,
+        clues: &[Clue],
+    ) -> chatgpt::Result<()> {
+        let mut conversation = self.0.new_conversation();
+        for clue in clues {
+            let prompt = prompt_for_clue(clue, grid);
+            let cells = grid.cells_for_clue(clue);
+            println!("{}", prompt);
+            let answer = conversation
+                .send_message(prompt)
+                .await?
+                .message()
+                .content
+                .clone();
+            println!("{}", answer);
+            if cells.len() != answer.len() {
+                println!(
+                    "Answer {} does not match clue length of {}",
+                    answer,
+                    cells.len()
+                )
+            } else {
+                grid.enter_answer(clue, answer)
+            }
+        }
+        Ok(())
     }
 }
 
@@ -49,7 +101,22 @@ impl<const W: usize, const H: usize> Grid<W, H> {
         //       Maybe we want to allow for partial entry?
         assert_eq!(cells.len(), answer.len());
         for (cell, c) in cells.iter().zip(answer.chars()) {
-            cell.write_to(c)
+            cell.write_to(c.to_ascii_uppercase())
+        }
+    }
+
+    /// Show the current status of the grid
+    pub fn show(&self) {
+        for row in self.cells.iter() {
+            let r: String = row
+                .iter()
+                .map(|c| match c.fill() {
+                    Fill::Empty => '_',
+                    Fill::Filled(c) => c,
+                    Fill::Shaded => 'X',
+                })
+                .collect();
+            println!("{}", r)
         }
     }
 }
@@ -92,6 +159,7 @@ impl Cell {
         }
     }
 
+    /// Get the current Fill value
     fn fill(&self) -> Fill {
         *self.fill.borrow()
     }
@@ -111,13 +179,6 @@ pub struct Clue {
     pub direction: Direction,
     pub text: String,
     pub position: Position,
-}
-
-impl Clue {
-    /// Ask ChatGPT for an answer
-    pub fn ask_for_answer(&self) -> String {
-        todo!()
-    }
 }
 
 #[cfg(test)]
@@ -168,12 +229,12 @@ mod tests {
             number: 1,
             text: String::new(),
         };
-        grid.enter_answer(&across_clue, "a".into());
+        grid.enter_answer(&across_clue, "A".into());
         assert_eq!(
             grid.cells_for_clue(&across_clue)[0].fill(),
-            Fill::Filled('a')
+            Fill::Filled('A')
         );
-        assert_eq!(grid.cells_for_clue(&down_clue)[0].fill(), Fill::Filled('a'));
+        assert_eq!(grid.cells_for_clue(&down_clue)[0].fill(), Fill::Filled('A'));
         assert_eq!(grid.cells_for_clue(&down_clue)[1].fill(), Fill::Empty)
     }
 }

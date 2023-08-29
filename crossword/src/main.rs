@@ -1,115 +1,50 @@
-use std::env::args;
+use clap::Parser;
+use crossword::{solver::GPTSolver, web::MiniCrosswordWebDriver, Grid};
 
-use crossword::{Cell, Clue, GPTSolver, Grid};
+#[derive(Parser)]
+struct Opts {
+    // Path to the Chrome binary. The 'thirtyfour' library will attempt to
+    // find the binary itself, but certain installations may require this
+    // to be passed explicitly.
+    #[clap(short, long)]
+    chrome_binary_path: Option<String>,
+    // URL of running chromedriver application
+    #[clap(short, long, default_value = "http://localhost:9515")]
+    chromedriver_server_url: String,
+    #[clap(short, long)]
+    openapi_key: String,
+}
 
 #[tokio::main]
 async fn main() {
-    let grid = Grid {
-        cells: [
-            [
-                Cell::shaded(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::shaded(),
-            ],
-            [
-                Cell::shaded(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::shaded(),
-            ],
-            [
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-            ],
-            [
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-            ],
-            [
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-                Cell::empty(),
-            ],
-        ],
-    };
-    let clues = vec![
-        Clue {
-            number: 1,
-            direction: crossword::Direction::Across,
-            position: crossword::Position { row: 0, column: 1 },
-            text: "Channel with on-air pledge drives".into(),
-        },
-        Clue {
-            number: 4,
-            direction: crossword::Direction::Across,
-            position: crossword::Position { row: 1, column: 1 },
-            text: "\"Say what!?\"".into(),
-        },
-        Clue {
-            number: 5,
-            direction: crossword::Direction::Across,
-            position: crossword::Position { row: 2, column: 0 },
-            text: "With 7-Across, street sign with a red circle and white bar".into(),
-        },
-        Clue {
-            number: 7,
-            direction: crossword::Direction::Across,
-            position: crossword::Position { row: 3, column: 0 },
-            text: "See 5-Across".into(),
-        },
-        Clue {
-            number: 8,
-            direction: crossword::Direction::Across,
-            position: crossword::Position { row: 4, column: 0 },
-            text: "Like eating a melting ice cream cone".into(),
-        },
-        Clue {
-            number: 1,
-            direction: crossword::Direction::Down,
-            position: crossword::Position { row: 0, column: 1 },
-            text: "Object that has moved from the wall to your pocket".into(),
-        },
-        Clue {
-            number: 2,
-            direction: crossword::Direction::Down,
-            position: crossword::Position { row: 0, column: 2 },
-            text: "Short hits, in baseball".into(),
-        },
-        Clue {
-            number: 3,
-            direction: crossword::Direction::Down,
-            position: crossword::Position { row: 0, column: 3 },
-            text: "Vans, e.g.".into(),
-        },
-        Clue {
-            number: 5,
-            direction: crossword::Direction::Down,
-            position: crossword::Position { row: 2, column: 0 },
-            text: "Blue on an electoral map: Abbr.".into(),
-        },
-        Clue {
-            number: 6,
-            direction: crossword::Direction::Down,
-            position: crossword::Position { row: 2, column: 4 },
-            text: "Make an effort".into(),
-        },
-    ];
-    let solver = GPTSolver::new(args().nth(1).unwrap()).expect("Unable to create GPT response");
-    grid.show();
+    let opts: Opts = Opts::parse();
+    let driver = MiniCrosswordWebDriver::create(
+        &opts.chromedriver_server_url,
+        opts.chrome_binary_path.as_deref(),
+    )
+    .await
+    .expect("Failed to create WebDriver");
+    let solver = GPTSolver::new(opts.openapi_key).expect("Failed to load GPTSolver");
+    let puzzle = driver
+        .get_puzzle()
+        .await
+        .expect("Failed to get Puzzle information");
+    let grid = Grid::<5, 5>::from(&puzzle);
+    driver.enter_answer(&puzzle.clues[0], "calf").await.unwrap();
+    // Solve
     solver
-        .solve(&grid, &clues)
+        .solve(&grid, &puzzle.clues, &driver)
         .await
         .expect("Failed to solve Crossword puzzle!");
-    grid.show();
+    // Verify answers for clues
+    for clue in puzzle.clues {
+        let attempted_answer = grid.answer_for(&clue);
+        if clue.answer.as_ref().unwrap_or(&attempted_answer) != &attempted_answer {
+            panic!(
+                "{} does not match expected answer {}",
+                attempted_answer,
+                clue.answer.unwrap_or_default(),
+            )
+        }
+    }
 }

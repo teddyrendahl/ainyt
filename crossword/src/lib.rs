@@ -1,64 +1,8 @@
 use std::{cell::RefCell, rc::Rc};
+pub mod solver;
+pub mod web;
 
-use chatgpt::prelude::ChatGPT;
-
-/// Generate a ChatGPT prompt for a given Clue
-fn prompt_for_clue<const W: usize, const H: usize>(clue: &Clue, grid: &Grid<W, H>) -> String {
-    let cells = grid.cells_for_clue(clue);
-    let pattern = cells
-        .iter()
-        .map(|cell| match cell.fill() {
-            Fill::Empty => '_',
-            Fill::Filled(c) => c,
-            Fill::Shaded => panic!("Clue pattern should not have shaded cell"),
-        })
-        .collect::<String>();
-    format!(
-        "What is the answer to the crossword clue \"{}\". \
-             The answer is {} letters long with the pattern {}? \
-             Respond with just the answer",
-        clue.text,
-        cells.len(),
-        pattern
-    )
-}
-
-pub struct GPTSolver(ChatGPT);
-
-impl GPTSolver {
-    pub fn new(api_key: String) -> chatgpt::Result<Self> {
-        Ok(Self(ChatGPT::new(api_key)?))
-    }
-    pub async fn solve<const W: usize, const H: usize>(
-        &self,
-        grid: &Grid<W, H>,
-        clues: &[Clue],
-    ) -> chatgpt::Result<()> {
-        let mut conversation = self.0.new_conversation();
-        for clue in clues {
-            let prompt = prompt_for_clue(clue, grid);
-            let cells = grid.cells_for_clue(clue);
-            println!("{}", prompt);
-            let answer = conversation
-                .send_message(prompt)
-                .await?
-                .message()
-                .content
-                .clone();
-            println!("{}", answer);
-            if cells.len() != answer.len() {
-                println!(
-                    "Answer {} does not match clue length of {}",
-                    answer,
-                    cells.len()
-                )
-            } else {
-                grid.enter_answer(clue, answer)
-            }
-        }
-        Ok(())
-    }
-}
+use serde::{Deserialize, Serialize};
 
 // Description of the entire Grid
 pub struct Grid<const W: usize, const H: usize> {
@@ -72,37 +16,45 @@ impl<const W: usize, const H: usize> Grid<W, H> {
     }
 
     /// Get all the fillable cells for the Clue
-    fn cells_for_clue(&self, clue: &Clue) -> Vec<Cell> {
-        let mut cells = vec![self.cell_at(clue.position)];
+    fn cells_for_clue(&self, clue: &Clue) -> Vec<Fill> {
+        let mut cells = vec![];
         let mut position = clue.position;
         loop {
-            // Look at the next cell
-            match clue.direction {
-                Direction::Across => position.column += 1,
-                Direction::Down => position.row += 1,
-            }
-
             // Stop conditions are either the edge of the puzzle or a shaded cell
             if position.column >= W || position.row >= H {
                 break cells;
             }
             let next_cell = self.cell_at(position);
-            if matches!(next_cell.fill(), Fill::Shaded) {
-                break cells;
+            match next_cell {
+                Cell::Shaded => break cells,
+                Cell::Fillable(f) => cells.push(f),
             }
-            cells.push(next_cell);
+
+            // Look at the next cell
+            match clue.direction {
+                Direction::Across => position.column += 1,
+                Direction::Down => position.row += 1,
+            }
         }
     }
 
     /// Enter an answer for the Clue
     fn enter_answer(&self, clue: &Clue, answer: String) {
-        let cells = self.cells_for_clue(clue);
+        let mut cells = self.cells_for_clue(clue);
         // TODO: This should be a proper error
         //       Maybe we want to allow for partial entry?
         assert_eq!(cells.len(), answer.len());
-        for (cell, c) in cells.iter().zip(answer.chars()) {
+        for (cell, c) in cells.iter_mut().zip(answer.chars()) {
             cell.write_to(c.to_ascii_uppercase())
         }
+    }
+
+    /// Get the current answer for
+    pub fn answer_for(&self, clue: &Clue) -> String {
+        self.cells_for_clue(clue)
+            .iter()
+            .map(|f| f.value().unwrap_or('_'))
+            .collect()
     }
 
     /// Show the current status of the grid
@@ -110,86 +62,126 @@ impl<const W: usize, const H: usize> Grid<W, H> {
         for row in self.cells.iter() {
             let r: String = row
                 .iter()
-                .map(|c| match c.fill() {
-                    Fill::Empty => '_',
-                    Fill::Filled(c) => c,
-                    Fill::Shaded => 'X',
+                .map(|c| match c {
+                    Cell::Fillable(x) => x.value().unwrap_or('_'),
+                    Cell::Shaded => 'X',
                 })
                 .collect();
             println!("{}", r)
         }
     }
 }
-
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum Direction {
     Down,
     Across,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Fill {
-    Shaded,
-    Empty,
-    Filled(char),
-}
-
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+/// Zero-indexed grid Position
 pub struct Position {
     pub row: usize,
     pub column: usize,
 }
 
-#[derive(Clone)]
-pub struct Cell {
-    fill: Rc<RefCell<Fill>>,
+impl Position {
+    pub fn from_cell_id(id: usize, columns: usize) -> Self {
+        Position {
+            row: id / columns,
+            column: id % columns,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Cell {
+    Shaded,
+    Fillable(Fill),
+}
+
+#[derive(Debug, Clone)]
+pub struct Fill(Rc<RefCell<Option<char>>>);
+
+impl Fill {
+    /// Create a new empty Fillable cell
+    pub fn new() -> Self {
+        Self(Rc::new(RefCell::new(None)))
+    }
+
+    /// Current fill value
+    pub fn value(&self) -> Option<char> {
+        *self.0.borrow()
+    }
+
+    /// Write an answer into our Grid
+    pub fn write_to(&mut self, c: char) {
+        let _ = self.0.borrow_mut().insert(c);
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Puzzle {
+    pub width: usize,
+    pub height: usize,
+    pub clues: Vec<Clue>,
+    pub shaded_squares: Vec<Position>,
+}
+
+impl<const W: usize, const H: usize> From<&Puzzle> for Grid<W, H> {
+    fn from(value: &Puzzle) -> Self {
+        Grid {
+            cells: (0..value.height)
+                .map(|row| {
+                    (0..value.width)
+                        .map(|column| {
+                            if value.shaded_squares.contains(&Position { row, column }) {
+                                Cell::Shaded
+                            } else {
+                                Cell::empty()
+                            }
+                        })
+                        .collect::<Vec<Cell>>()
+                        .try_into()
+                        .expect("Unable to create row of cells")
+                })
+                .collect::<Vec<[Cell; W]>>()
+                .try_into()
+                .expect("Unable to create grid of cells"),
+        }
+    }
+}
+impl Default for Fill {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Cell {
     /// Create a new empty Cell
     pub fn empty() -> Self {
-        Cell {
-            fill: Rc::new(RefCell::new(Fill::Empty)),
-        }
-    }
-
-    /// Create a new shaded Cell
-    pub fn shaded() -> Self {
-        Cell {
-            fill: Rc::new(RefCell::new(Fill::Shaded)),
-        }
-    }
-
-    /// Get the current Fill value
-    fn fill(&self) -> Fill {
-        *self.fill.borrow()
-    }
-
-    /// Write an answer into our Grid
-    pub fn write_to(&self, c: char) {
-        self.fill.replace_with(|&mut old| {
-            assert!(!matches!(old, Fill::Shaded));
-            Fill::Filled(c)
-        });
+        Cell::Fillable(Fill::new())
     }
 }
 
 //
+#[derive(Serialize, Deserialize)]
 pub struct Clue {
     pub number: usize,
     pub direction: Direction,
     pub text: String,
     pub position: Position,
+    pub answer: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Cell, Clue, Fill, Grid};
+    use crate::{Cell, Clue, Grid, Position};
 
     #[test]
     fn test_get_clue_cells() {
         let grid = Grid {
             cells: [
-                [Cell::empty(), Cell::shaded()],
+                [Cell::empty(), Cell::Shaded],
                 [Cell::empty(), Cell::empty()],
             ],
         };
@@ -198,12 +190,14 @@ mod tests {
             position: crate::Position { row: 0, column: 0 },
             number: 0,
             text: String::new(),
+            answer: None,
         };
         let down_clue = Clue {
             direction: crate::Direction::Down,
             position: crate::Position { row: 0, column: 0 },
             number: 1,
             text: String::new(),
+            answer: None,
         };
         assert_eq!(grid.cells_for_clue(&across_clue).len(), 1);
         assert_eq!(grid.cells_for_clue(&down_clue).len(), 2)
@@ -213,7 +207,7 @@ mod tests {
     fn test_cell_entry() {
         let grid = Grid {
             cells: [
-                [Cell::empty(), Cell::shaded()],
+                [Cell::empty(), Cell::Shaded],
                 [Cell::empty(), Cell::empty()],
             ],
         };
@@ -222,19 +216,29 @@ mod tests {
             position: crate::Position { row: 0, column: 0 },
             number: 0,
             text: String::new(),
+            answer: None,
         };
         let down_clue = Clue {
             direction: crate::Direction::Down,
             position: crate::Position { row: 0, column: 0 },
             number: 1,
             text: String::new(),
+            answer: None,
         };
         grid.enter_answer(&across_clue, "A".into());
-        assert_eq!(
-            grid.cells_for_clue(&across_clue)[0].fill(),
-            Fill::Filled('A')
-        );
-        assert_eq!(grid.cells_for_clue(&down_clue)[0].fill(), Fill::Filled('A'));
-        assert_eq!(grid.cells_for_clue(&down_clue)[1].fill(), Fill::Empty)
+        assert_eq!(grid.cells_for_clue(&across_clue)[0].value(), Some('A'));
+        assert_eq!(grid.cells_for_clue(&down_clue)[0].value(), Some('A'));
+        assert_eq!(grid.cells_for_clue(&down_clue)[1].value(), None)
+    }
+
+    #[test]
+    fn test_position_from_cell_id() {
+        let p = Position::from_cell_id(3, 5);
+        assert_eq!(p.row, 0);
+        assert_eq!(p.column, 3);
+
+        let p = Position::from_cell_id(6, 5);
+        assert_eq!(p.row, 1);
+        assert_eq!(p.column, 1);
     }
 }

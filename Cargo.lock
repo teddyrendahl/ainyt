@@ -230,6 +230,11 @@ name = "crossword"
 version = "0.1.0"
 dependencies = [
  "chatgpt_rs",
+ "clap",
+ "regex",
+ "serde",
+ "serde_arrays",
+ "thirtyfour",
  "tokio",
 ]
 
@@ -1083,6 +1088,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdb30a74471f5b7a1fa299f40b4bf1be93af61116df95465b2b5fc419331e430"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde_arrays"
+version = "0.1.0"
+source = "git+https://github.com/Kromey/serde_arrays?branch=main#68949e48551834d70c7643f47424e022d44aaee3"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

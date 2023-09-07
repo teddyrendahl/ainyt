@@ -13,3 +13,6 @@ serde_arrays = {git = "https://github.com/Kromey/serde_arrays", branch="main"}
 thirtyfour.workspace = true
 tokio.workspace = true
 regex = "1.9"
+futures = "0.3"
+serde_yaml = "0.9"
+itertools = "0.10"

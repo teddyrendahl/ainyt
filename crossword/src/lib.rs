@@ -5,29 +5,39 @@ pub mod web;
 use serde::{Deserialize, Serialize};
 
 // Description of the entire Grid
-pub struct Grid<const W: usize, const H: usize> {
-    pub cells: [[Cell; W]; H],
+pub struct Grid {
+    pub width: usize,
+    pub height: usize,
+    pub cells: Vec<Vec<Cell>>,
 }
 
-impl<const W: usize, const H: usize> Grid<W, H> {
+impl Grid {
+    /// Utility to check that all fillable cells have values entered in them
+    pub fn filled(&self) -> bool {
+        self.cells.iter().flatten().all(|c| match c {
+            Cell::Shaded => true,
+            Cell::Fillable(f) if f.value().is_some() => true,
+            Cell::Fillable(_) => false,
+        })
+    }
     // Get a Cell at a specific Position
     fn cell_at(&self, position: Position) -> Cell {
         self.cells[position.row][position.column].clone()
     }
 
     /// Get all the fillable cells for the Clue
-    fn cells_for_clue(&self, clue: &Clue) -> Vec<Fill> {
+    fn cells_for_clue(&self, clue: &Clue) -> Vec<(Position, Fill)> {
         let mut cells = vec![];
         let mut position = clue.position;
         loop {
             // Stop conditions are either the edge of the puzzle or a shaded cell
-            if position.column >= W || position.row >= H {
+            if position.column >= self.width || position.row >= self.height {
                 break cells;
             }
             let next_cell = self.cell_at(position);
             match next_cell {
                 Cell::Shaded => break cells,
-                Cell::Fillable(f) => cells.push(f),
+                Cell::Fillable(f) => cells.push((position, f)),
             }
 
             // Look at the next cell
@@ -38,13 +48,20 @@ impl<const W: usize, const H: usize> Grid<W, H> {
         }
     }
 
+    /// Clear an answer from the Grid
+    #[allow(dead_code)]
+    fn clear_answer(&self, clue: &Clue) {
+        for (_, mut f) in self.cells_for_clue(clue) {
+            f.clear()
+        }
+    }
     /// Enter an answer for the Clue
     fn enter_answer(&self, clue: &Clue, answer: String) {
-        let mut cells = self.cells_for_clue(clue);
+        let cells = self.cells_for_clue(clue);
         // TODO: This should be a proper error
         //       Maybe we want to allow for partial entry?
         assert_eq!(cells.len(), answer.len());
-        for (cell, c) in cells.iter_mut().zip(answer.chars()) {
+        for ((_, mut cell), c) in cells.into_iter().zip(answer.chars()) {
             cell.write_to(c.to_ascii_uppercase())
         }
     }
@@ -53,7 +70,7 @@ impl<const W: usize, const H: usize> Grid<W, H> {
     pub fn answer_for(&self, clue: &Clue) -> String {
         self.cells_for_clue(clue)
             .iter()
-            .map(|f| f.value().unwrap_or('_'))
+            .map(|(_, f)| f.value().unwrap_or('_'))
             .collect()
     }
 
@@ -71,7 +88,7 @@ impl<const W: usize, const H: usize> Grid<W, H> {
         }
     }
 }
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Direction {
     Down,
     Across,
@@ -117,6 +134,10 @@ impl Fill {
     pub fn write_to(&mut self, c: char) {
         let _ = self.0.borrow_mut().insert(c);
     }
+
+    pub fn clear(&mut self) {
+        self.0.borrow_mut().take();
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -127,9 +148,11 @@ pub struct Puzzle {
     pub shaded_squares: Vec<Position>,
 }
 
-impl<const W: usize, const H: usize> From<&Puzzle> for Grid<W, H> {
+impl From<&Puzzle> for Grid {
     fn from(value: &Puzzle) -> Self {
         Grid {
+            width: value.width,
+            height: value.height,
             cells: (0..value.height)
                 .map(|row| {
                     (0..value.width)
@@ -141,15 +164,12 @@ impl<const W: usize, const H: usize> From<&Puzzle> for Grid<W, H> {
                             }
                         })
                         .collect::<Vec<Cell>>()
-                        .try_into()
-                        .expect("Unable to create row of cells")
                 })
-                .collect::<Vec<[Cell; W]>>()
-                .try_into()
-                .expect("Unable to create grid of cells"),
+                .collect::<Vec<Vec<Cell>>>(),
         }
     }
 }
+
 impl Default for Fill {
     fn default() -> Self {
         Self::new()
@@ -164,7 +184,7 @@ impl Cell {
 }
 
 //
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Clue {
     pub number: usize,
     pub direction: Direction,
@@ -180,9 +200,11 @@ mod tests {
     #[test]
     fn test_get_clue_cells() {
         let grid = Grid {
-            cells: [
-                [Cell::empty(), Cell::Shaded],
-                [Cell::empty(), Cell::empty()],
+            width: 2,
+            height: 2,
+            cells: vec![
+                vec![Cell::empty(), Cell::Shaded],
+                vec![Cell::empty(), Cell::empty()],
             ],
         };
         let across_clue = Clue {
@@ -206,9 +228,11 @@ mod tests {
     #[test]
     fn test_cell_entry() {
         let grid = Grid {
-            cells: [
-                [Cell::empty(), Cell::Shaded],
-                [Cell::empty(), Cell::empty()],
+            width: 2,
+            height: 2,
+            cells: vec![
+                vec![Cell::empty(), Cell::Shaded],
+                vec![Cell::empty(), Cell::empty()],
             ],
         };
         let across_clue = Clue {
@@ -226,9 +250,9 @@ mod tests {
             answer: None,
         };
         grid.enter_answer(&across_clue, "A".into());
-        assert_eq!(grid.cells_for_clue(&across_clue)[0].value(), Some('A'));
-        assert_eq!(grid.cells_for_clue(&down_clue)[0].value(), Some('A'));
-        assert_eq!(grid.cells_for_clue(&down_clue)[1].value(), None)
+        assert_eq!(grid.cells_for_clue(&across_clue)[0].1.value(), Some('A'));
+        assert_eq!(grid.cells_for_clue(&down_clue)[0].1.value(), Some('A'));
+        assert_eq!(grid.cells_for_clue(&down_clue)[1].1.value(), None)
     }
 
     #[test]

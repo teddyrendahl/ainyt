@@ -29,8 +29,7 @@ async fn main() {
         .get_puzzle()
         .await
         .expect("Failed to get Puzzle information");
-    let grid = Grid::<5, 5>::from(&puzzle);
-    driver.enter_answer(&puzzle.clues[0], "calf").await.unwrap();
+    let grid = Grid::from(&puzzle);
     // Solve
     solver
         .solve(&grid, &puzzle.clues, &driver)

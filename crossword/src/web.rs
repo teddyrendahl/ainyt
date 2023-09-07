@@ -1,9 +1,11 @@
 use std::{collections::HashMap, time::Duration};
 
+use futures::future::try_join_all;
+use itertools::Itertools;
 use regex::Regex;
-use thirtyfour::{prelude::WebDriverResult, By, ChromeCapabilities, WebDriver};
+use thirtyfour::{prelude::WebDriverResult, By, ChromeCapabilities, Key, WebDriver};
 
-use crate::{Clue, Direction, Position, Puzzle};
+use crate::{Clue, Direction, Grid, Position, Puzzle};
 
 static MINI_URL: &str = "https://www.nytimes.com/crosswords/game/mini";
 static SHADED_SQUARE_CLS: &str = "xwd__cell--block xwd__cell--nested";
@@ -27,19 +29,39 @@ impl MiniCrosswordWebDriver {
             "purr-blocker-card__button", // Updated Terms of Service
             "xwd__modal--subtle-button", // Play With Free Account
         ] {
+            tokio::time::sleep(Duration::from_millis(250)).await;
             driver
                 .find(By::ClassName(button_cls))
                 .await?
                 .click()
                 .await?;
             // TODO: Use a wait instead of a sleep
-            tokio::time::sleep(Duration::from_millis(500)).await;
         }
         Ok(Self(driver))
     }
 
+    // Clear an answer from the queue
+    #[allow(dead_code)]
+    pub async fn clear_answer(&self, clue: &Clue, grid: &Grid) -> WebDriverResult<()> {
+        // Maybe lazy... maybe ugly enter all backspaces as the answer
+        let size = grid.cells_for_clue(clue).len();
+        self.enter_answer(
+            clue,
+            &(0..size)
+                .map(|_| Key::Backspace.to_string())
+                .collect::<String>(),
+            grid,
+        )
+        .await
+    }
+
     // Enter an answer into the Grid
-    pub async fn enter_answer(&self, clue: &Clue, answer: &str) -> WebDriverResult<()> {
+    pub async fn enter_answer(
+        &self,
+        clue: &Clue,
+        answer: &str,
+        grid: &Grid,
+    ) -> WebDriverResult<()> {
         let mut position = clue.position;
         for c in answer.chars() {
             // Get cell based on position
@@ -47,7 +69,7 @@ impl MiniCrosswordWebDriver {
                 .0
                 .find(By::Id(&format!(
                     "cell-id-{}",
-                    position.row * 5 + position.column
+                    position.row * grid.width + position.column
                 )))
                 .await?;
             // Enter character into the cell
@@ -69,6 +91,26 @@ impl MiniCrosswordWebDriver {
         Ok(())
     }
 
+    /// Whether the puzzle has been marked complete by NYT
+    pub async fn is_complete(&self) -> WebDriverResult<bool> {
+        Ok(!self
+            .0
+            .find_all(By::ClassName("xwd__congrats-modal--content"))
+            .await?
+            .is_empty())
+    }
+
+    /// Sometimes the keep trying box pops-up if we have filled the Grid incorrectly
+    pub async fn maybe_keep_trying(&self) -> WebDriverResult<()> {
+        for wbe in self
+            .0
+            .find_all(By::Css("button[aria-label=\"Keep trying\"]"))
+            .await?
+        {
+            wbe.click().await?
+        }
+        Ok(())
+    }
     /// Read the HTML cell information to determine the Puzzle information
     pub async fn get_puzzle(&self) -> WebDriverResult<Puzzle> {
         let mut shaded_squares = Vec::new();
@@ -76,10 +118,20 @@ impl MiniCrosswordWebDriver {
         let mut clues = vec![];
         // HTML id() attributes of the cell tells us the position in the crossword grid
         let re = Regex::new(r"cell-id-(\d*)").unwrap();
+        // Get the size of the grid by seeing the number of unique X and Y values
+        let cells = self.0.find_all(By::ClassName("xwd__cell")).await?;
+        let columns = try_join_all(
+            cells
+                .iter()
+                .map(|wbe| async move { wbe.find(By::Tag("RECT")).await?.css_value("x").await }),
+        )
+        .await?
+        .into_iter()
+        .unique()
+        .count();
         // All cells have the same HTML class name
-        for cell in self.0.find_all(By::ClassName("xwd__cell")).await? {
+        for cell in cells.iter() {
             let r = cell.find(By::Css("rect[role=\"cell\"]")).await?;
-
             // Look at the id() of the rect inside the cell. If we can't interpret it
             // into a Position we are in trouble
             let position = Position::from_cell_id(
@@ -92,7 +144,7 @@ impl MiniCrosswordWebDriver {
                     .expect("Cell id does not match regex")
                     .parse()
                     .expect("Cell id is not valid usize"),
-                5,
+                columns,
             );
             // Shaded squares have a specific class name
             if r.class_name().await?.expect("Missing class name") == SHADED_SQUARE_CLS {
@@ -150,8 +202,8 @@ impl MiniCrosswordWebDriver {
             }
         }
         Ok(Puzzle {
-            width: 5,
-            height: 5,
+            width: columns,
+            height: cells.len() / columns,
             shaded_squares,
             clues,
         })

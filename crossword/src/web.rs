@@ -40,19 +40,12 @@ impl MiniCrosswordWebDriver {
         Ok(Self(driver))
     }
 
-    // Clear an answer from the queue
-    #[allow(dead_code)]
-    pub async fn clear_answer(&self, clue: &Clue, grid: &Grid) -> WebDriverResult<()> {
-        // Maybe lazy... maybe ugly enter all backspaces as the answer
-        let size = grid.cells_for_clue(clue).len();
-        self.enter_answer(
-            clue,
-            &(0..size)
-                .map(|_| Key::Backspace.to_string())
-                .collect::<String>(),
-            grid,
-        )
-        .await
+    /// Clear the Grid
+    pub async fn clear(&self, grid: &Grid) -> WebDriverResult<()> {
+        for i in 0..grid.width * grid.height {
+            self.enter_in_cell(i, Key::Backspace.to_string()).await?;
+        }
+        Ok(())
     }
 
     // Enter an answer into the Grid
@@ -64,22 +57,8 @@ impl MiniCrosswordWebDriver {
     ) -> WebDriverResult<()> {
         let mut position = clue.position;
         for c in answer.chars() {
-            // Get cell based on position
-            let cell = self
-                .0
-                .find(By::Id(&format!(
-                    "cell-id-{}",
-                    position.row * grid.width + position.column
-                )))
+            self.enter_in_cell(position.row * grid.width + position.column, c.to_string())
                 .await?;
-            // Enter character into the cell
-            self.0
-                .action_chain()
-                .click_element(&cell)
-                .send_keys(c.to_string())
-                .perform()
-                .await?;
-
             // Go to the next cell in line
             match clue.direction {
                 Direction::Across => position.column += 1,
@@ -89,6 +68,18 @@ impl MiniCrosswordWebDriver {
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
         Ok(())
+    }
+
+    async fn enter_in_cell(&self, cell_id: usize, text: impl AsRef<str>) -> WebDriverResult<()> {
+        // Get cell based on position
+        let cell = self.0.find(By::Id(&format!("cell-id-{}", cell_id))).await?;
+        // Enter character into the cell
+        self.0
+            .action_chain()
+            .click_element(&cell)
+            .send_keys(text)
+            .perform()
+            .await
     }
 
     /// Whether the puzzle has been marked complete by NYT

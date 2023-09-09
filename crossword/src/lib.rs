@@ -5,6 +5,7 @@ pub mod web;
 use serde::{Deserialize, Serialize};
 
 // Description of the entire Grid
+#[derive(Clone)]
 pub struct Grid {
     pub width: usize,
     pub height: usize,
@@ -48,13 +49,15 @@ impl Grid {
         }
     }
 
-    /// Clear an answer from the Grid
-    #[allow(dead_code)]
-    fn clear_answer(&self, clue: &Clue) {
-        for (_, mut f) in self.cells_for_clue(clue) {
-            f.clear()
+    /// Clear all answers from the Grid
+    fn clear(&mut self) {
+        for c in self.cells.iter_mut().flatten() {
+            if let Cell::Fillable(f) = c {
+                f.clear()
+            }
         }
     }
+
     /// Enter an answer for the Clue
     fn enter_answer(&self, clue: &Clue, answer: String) {
         let cells = self.cells_for_clue(clue);
@@ -87,14 +90,40 @@ impl Grid {
             println!("{}", r)
         }
     }
+
+    /// Find all all the Clues that Cross with a given Clue
+    pub fn crosses(&self, clue: &Clue, clues: &[Clue]) -> Vec<Clue> {
+        let positions: Vec<Position> = self
+            .cells_for_clue(clue)
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        clues
+            .iter()
+            .filter_map(|c| {
+                if c.direction != clue.direction
+                    && self
+                        .cells_for_clue(c)
+                        .iter()
+                        .any(|(p, _)| positions.contains(p))
+                {
+                    Some(c.clone())
+                } else {
+                    None
+                }
+            })
+            .rev()
+            .collect()
+    }
 }
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Direction {
     Down,
     Across,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// Zero-indexed grid Position
 pub struct Position {
     pub row: usize,
@@ -184,7 +213,7 @@ impl Cell {
 }
 
 //
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Clue {
     pub number: usize,
     pub direction: Direction,
@@ -195,7 +224,7 @@ pub struct Clue {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Cell, Clue, Grid, Position};
+    use crate::{Cell, Clue, Direction, Grid, Position};
 
     #[test]
     fn test_get_clue_cells() {
@@ -264,5 +293,54 @@ mod tests {
         let p = Position::from_cell_id(6, 5);
         assert_eq!(p.row, 1);
         assert_eq!(p.column, 1);
+    }
+
+    #[test]
+    fn test_crosses() {
+        let grid = Grid {
+            width: 2,
+            height: 2,
+            cells: vec![
+                vec![Cell::empty(), Cell::empty()],
+                vec![Cell::empty(), Cell::empty()],
+            ],
+        };
+        let clue = Clue {
+            direction: crate::Direction::Across,
+            position: crate::Position { row: 0, column: 0 },
+            number: 0,
+            text: String::new(),
+            answer: None,
+        };
+
+        let crosses = grid.crosses(
+            &clue,
+            &[
+                clue.clone(),
+                Clue {
+                    direction: crate::Direction::Across,
+                    position: crate::Position { row: 1, column: 0 },
+                    number: 0,
+                    text: String::new(),
+                    answer: None,
+                },
+                Clue {
+                    direction: crate::Direction::Down,
+                    position: crate::Position { row: 0, column: 0 },
+                    number: 1,
+                    text: String::new(),
+                    answer: None,
+                },
+                Clue {
+                    direction: crate::Direction::Down,
+                    position: crate::Position { row: 0, column: 1 },
+                    number: 1,
+                    text: String::new(),
+                    answer: None,
+                },
+            ],
+        );
+        assert!(crosses.iter().all(|c| c.direction == Direction::Down));
+        assert_eq!(crosses.len(), 2);
     }
 }

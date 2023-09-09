@@ -24,15 +24,15 @@ async fn main() {
     )
     .await
     .expect("Failed to create WebDriver");
-    let solver = GPTSolver::new(opts.openapi_key).expect("Failed to load GPTSolver");
+    let mut solver = GPTSolver::new(opts.openapi_key).expect("Failed to load GPTSolver");
     let puzzle = driver
         .get_puzzle()
         .await
         .expect("Failed to get Puzzle information");
-    let grid = Grid::from(&puzzle);
+    let mut grid = Grid::from(&puzzle);
     // Solve
     solver
-        .solve(&grid, &puzzle.clues, &driver)
+        .solve(&mut grid, puzzle.clues.clone(), &driver)
         .await
         .expect("Failed to solve Crossword puzzle!");
     // Verify answers for clues

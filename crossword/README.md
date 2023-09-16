@@ -1,6 +1,8 @@
 # Mini Crossword
 An automated solver of the NYT daily mini crossword
 
+https://github.com/teddyrendahl/ainyt/assets/25753048/2893577e-b2f5-4c01-b702-9ebb9653c7ea
+
 # How To Use
 Wordle depends on a running instance of `chromedriver`. It is not built as part of this repository. By default, it is expected that `chromedriver` is running locally on port `9515`,
 but an alternate port can be passed in via the command line. The code also uses the ChatGPT API which requires a valid auth token with credits. The token is supplied via the CLI arguemnt `--openapi-key`.

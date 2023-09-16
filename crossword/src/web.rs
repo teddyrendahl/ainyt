@@ -407,7 +407,8 @@ impl MiniWebPuzzle {
 
 pub fn entry_for_cell(position: Position, direction: Direction, entries: &[WebEntry]) -> WebEntry {
     entries
-        .iter().find(|e| e.positions().contains(&position) && e.clue().direction == direction)
+        .iter()
+        .find(|e| e.positions().contains(&position) && e.clue().direction == direction)
         .unwrap()
         .clone()
 }

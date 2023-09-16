@@ -132,7 +132,7 @@ impl GPTSolver {
                 // We want to capture the state of the system if we used this answer
                 // and cleared out any other answers that disagree. This is our "backtrack"
                 // that gives us a chance to clear out old bad answers
-                println!("Capturing backtrack to enter {} in ");
+                println!("Capturing backtrack to enter {} in grid", answer);
                 // Capture the current state of all the cells.
                 let state = fork_entries(&entries).await;
                 // Find crossing clues that are creating the conflict and clear them out

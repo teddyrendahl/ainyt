@@ -19,7 +19,7 @@ struct Opts {
 
 #[tokio::main]
 async fn main() {
-    let opts = Opts::parse();
+    let opts: Opts = Opts::parse();
     let driver = WordleWebDriver::create(
         &opts.chromedriver_server_url,
         opts.chrome_binary_path.as_deref(),

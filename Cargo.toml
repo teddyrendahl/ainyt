@@ -1,5 +1,10 @@
 [workspace]
-members = ["wordle"]
+members = ["wordle", "crossword"]
+
+[workspace.dependencies]
+clap = { version = "3", features = ["derive"]}
+thirtyfour = { version = "0.31"}
+tokio = {version = "1"}
 
 [profile.test]
 opt-level = 3

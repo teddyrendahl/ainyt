@@ -1,5 +1,5 @@
 use clap::Parser;
-use crossword::{solver::GPTSolver, web::MiniCrosswordWebDriver, Grid};
+use crossword::{solver::GPTSolver, web::MiniWebPuzzle};
 
 #[derive(Parser)]
 struct Opts {
@@ -18,32 +18,20 @@ struct Opts {
 #[tokio::main]
 async fn main() {
     let opts: Opts = Opts::parse();
-    let driver = MiniCrosswordWebDriver::create(
+    let puzzle = MiniWebPuzzle::new(
         &opts.chromedriver_server_url,
         opts.chrome_binary_path.as_deref(),
     )
     .await
-    .expect("Failed to create WebDriver");
+    .expect("Failed to read Puzzle information");
     let mut solver = GPTSolver::new(opts.openapi_key).expect("Failed to load GPTSolver");
-    let puzzle = driver
-        .get_puzzle()
+    if solver
+        .solve(&puzzle)
         .await
-        .expect("Failed to get Puzzle information");
-    let mut grid = Grid::from(&puzzle);
-    // Solve
-    solver
-        .solve(&mut grid, puzzle.clues.clone(), &driver)
-        .await
-        .expect("Failed to solve Crossword puzzle!");
-    // Verify answers for clues
-    for clue in puzzle.clues {
-        let attempted_answer = grid.answer_for(&clue);
-        if clue.answer.as_ref().unwrap_or(&attempted_answer) != &attempted_answer {
-            panic!(
-                "{} does not match expected answer {}",
-                attempted_answer,
-                clue.answer.unwrap_or_default(),
-            )
-        }
+        .expect("Failed to solve Crossword puzzle!")
+    {
+        println!("Successfully solved Puzzle!")
+    } else {
+        println!("Failed to solve Puzzle!")
     }
 }

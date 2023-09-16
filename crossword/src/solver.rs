@@ -116,9 +116,13 @@ impl GPTSolver {
                 continue;
             }
             // Request a new answer for the Clue from the ChatGPT
-            let Some(answer) = self.solve_clue(&entry,  &entries).await.expect("Error with ChatGPT API") else {
-                    continue;
-                };
+            let Some(answer) = self
+                .solve_clue(&entry, &entries)
+                .await
+                .expect("Error with ChatGPT API")
+            else {
+                continue;
+            };
             // If the answer fits in our current Grid continue on
             if entry.fits(&answer).await {
                 // Enter our new answer into the grid

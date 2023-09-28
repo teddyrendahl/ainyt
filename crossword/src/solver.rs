@@ -1,6 +1,12 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    time::Duration,
+};
 
+use async_trait::async_trait;
 use chatgpt::prelude::ChatGPT;
+use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 use thirtyfour::prelude::WebDriverError;
 
 use crate::{
@@ -28,15 +34,26 @@ async fn prompt_for_clue(entry: &WebEntry, entries: &[WebEntry]) -> String {
         entries.iter().map(|entry| format!("{}-{:?}: {} \n", entry.clue().number, entry.clue().direction, entry.clue().text)).collect::<String>()
     )
 }
-pub struct GPTSolver {
-    gpt: ChatGPT,
+
+pub enum APIKey {
+    OpenAI(String),
+    Cohere(String),
+}
+
+pub struct LLMSolver {
+    llm: Box<dyn LLMModel>,
     cache: HashMap<String, Option<String>>,
 }
 
-impl GPTSolver {
-    pub fn new(api_key: String) -> chatgpt::Result<Self> {
+impl LLMSolver {
+    pub fn new(api_key: APIKey) -> chatgpt::Result<Self> {
         Ok(Self {
-            gpt: ChatGPT::new(api_key)?,
+            llm: match api_key {
+                APIKey::OpenAI(key) => {
+                    Box::new(OpenAI::new(key).expect("Failed to connect to ChatGPT"))
+                }
+                APIKey::Cohere(key) => Box::new(Cohere::new(key)),
+            },
             cache: HashMap::new(),
         })
     }
@@ -48,7 +65,6 @@ impl GPTSolver {
         entries: &[WebEntry],
     ) -> chatgpt::Result<Option<String>> {
         let prompt = prompt_for_clue(entry, entries).await;
-        // println!("{}", prompt);
         println!("{}-{:?}", entry.clue().number, entry.clue().direction);
         // If we've asked this before don't bother asking again
         if let Some(ans) = self.cache.get(&prompt) {
@@ -57,14 +73,11 @@ impl GPTSolver {
         } else {
             // Ask ChatGPT
             let answer = self
-                .gpt
-                .send_message(prompt.clone())
-                .await?
-                .message()
-                .content
-                .clone()
+                .llm
+                .chat(prompt.clone())
+                .await
                 .to_ascii_uppercase()
-                // This is frustrating we have to do this... we asked GPT not to include them.
+                // This is frustrating we have to do this... we asked not to include them.
                 .replace('_', "");
             println!("{}", answer);
             // Check this answer could plausibly be entered by verifying the length of the response
@@ -174,5 +187,92 @@ enum GridSolveError {
 impl From<WebDriverError> for GridSolveError {
     fn from(value: WebDriverError) -> Self {
         GridSolveError::WebDriverError(value)
+    }
+}
+
+#[async_trait]
+trait LLMModel {
+    async fn chat(&self, message: String) -> String;
+}
+
+struct Cohere {
+    client: reqwest::Client,
+    key: String,
+}
+
+impl Cohere {
+    fn new(key: String) -> Self {
+        Cohere {
+            client: reqwest::Client::builder().build().unwrap(),
+            key,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct CohereChatResponse {
+    text: String,
+}
+
+#[derive(Serialize)]
+struct CohereRequest {
+    message: String,
+}
+
+#[async_trait]
+impl LLMModel for Cohere {
+    async fn chat(&self, message: String) -> String {
+        let response = self
+            .client
+            .post("https://api.cohere.ai/v1/chat")
+            .header("Authorization", &format!("Bearer {}", self.key))
+            .header("Content-Type", "application/json")
+            .body(
+                serde_json::to_string(&CohereRequest {
+                    message: message.clone(),
+                })
+                .expect("Failed to serialize request"),
+            )
+            .send()
+            .await
+            .expect("Failed to connect to Cohere");
+
+        // 5 requests per minute on the trial license
+        if response.status() == StatusCode::TOO_MANY_REQUESTS {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            return self.chat(message).await;
+        }
+        response
+            .error_for_status()
+            .expect("Unexpected status")
+            .json::<CohereChatResponse>()
+            .await
+            .expect("Failed to parse CohereResponse")
+            .text
+    }
+}
+
+struct OpenAI {
+    gpt: ChatGPT,
+}
+
+impl OpenAI {
+    fn new(api_key: String) -> chatgpt::Result<Self> {
+        Ok(Self {
+            gpt: ChatGPT::new(api_key)?,
+        })
+    }
+}
+
+#[async_trait]
+impl LLMModel for OpenAI {
+    async fn chat(&self, message: String) -> String {
+        self.gpt
+            .send_message(message)
+            .await
+            .expect("Failed to reach ChatGPT")
+            .message()
+            .content
+            .clone()
     }
 }

@@ -1,8 +1,9 @@
 [workspace]
 members = ["wordle", "crossword"]
+resolver = "2"
 
 [workspace.dependencies]
-clap = { version = "3", features = ["derive"]}
+clap = { version = "4", features = ["derive"]}
 thirtyfour = { version = "0.31"}
 tokio = {version = "1"}
 

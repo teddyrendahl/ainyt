@@ -1,18 +1,42 @@
-use clap::Parser;
-use crossword::{solver::GPTSolver, web::MiniWebPuzzle};
+use clap::{Args, Parser};
+use crossword::{
+    solver::{APIKey, LLMSolver},
+    web::MiniWebPuzzle,
+};
 
 #[derive(Parser)]
 struct Opts {
     // Path to the Chrome binary. The 'thirtyfour' library will attempt to
     // find the binary itself, but certain installations may require this
     // to be passed explicitly.
-    #[clap(short, long)]
+    #[clap(long)]
     chrome_binary_path: Option<String>,
     // URL of running chromedriver application
-    #[clap(short, long, default_value = "http://localhost:9515")]
+    #[clap(long, default_value = "http://localhost:9515")]
     chromedriver_server_url: String,
-    #[clap(short, long)]
-    openapi_key: String,
+    #[clap(flatten)]
+    key: KeyOpts,
+}
+
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct KeyOpts {
+    #[clap(long)]
+    openai: Option<String>,
+    #[clap(long)]
+    cohere: Option<String>,
+}
+
+impl From<KeyOpts> for APIKey {
+    fn from(opts: KeyOpts) -> Self {
+        if let Some(k) = opts.openai {
+            APIKey::OpenAI(k)
+        } else if let Some(k) = opts.cohere {
+            APIKey::Cohere(k)
+        } else {
+            panic!("No key provided")
+        }
+    }
 }
 
 #[tokio::main]
@@ -24,7 +48,7 @@ async fn main() {
     )
     .await
     .expect("Failed to read Puzzle information");
-    let mut solver = GPTSolver::new(opts.openapi_key).expect("Failed to load GPTSolver");
+    let mut solver = LLMSolver::new(opts.key.into()).expect("Failed to load GPTSolver");
     if solver
         .solve(&puzzle)
         .await

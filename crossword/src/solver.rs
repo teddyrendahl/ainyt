@@ -1,10 +1,12 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Write,
     time::Duration,
 };
 
 use async_trait::async_trait;
 use chatgpt::prelude::ChatGPT;
+
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use thirtyfour::prelude::WebDriverError;
@@ -31,7 +33,10 @@ async fn prompt_for_clue(entry: &WebEntry, entries: &[WebEntry]) -> String {
         entry.clue().text,
         current_answer.len(),
         current_answer,
-        entries.iter().map(|entry| format!("{}-{:?}: {} \n", entry.clue().number, entry.clue().direction, entry.clue().text)).collect::<String>()
+        entries.iter().fold(String::new(),
+         |mut output, entry| {
+            let _  = writeln!(&mut output, "{}-{:?}: {} ", entry.clue().number, entry.clue().direction, entry.clue().text);
+             output})
     )
 }
 

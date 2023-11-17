@@ -43,7 +43,7 @@ impl MiniCrosswordWebDriver {
         let driver = WebDriver::new(chromedriver_server_url, options).await?;
         driver.goto(MINI_URL).await?;
         for button_cls in [
-            "purr-blocker-card__button", // Updated Terms of Service
+            // "purr-blocker-card__button", // Updated Terms of Service
             "xwd__modal--subtle-button", // Play With Free Account
         ] {
             wait_on_entry().await;

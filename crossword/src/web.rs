@@ -35,7 +35,7 @@ impl MiniCrosswordWebDriver {
         binary_path: Option<&str>,
     ) -> WebDriverResult<Self> {
         let mut options = ChromeCapabilities::new();
-        options.add_chrome_arg("--incognito")?;
+        //         options.add_chrome_arg("--incognito")?;
         options.add_chrome_arg("--start-maximized")?;
         if let Some(p) = binary_path {
             options.set_binary(p)?;
@@ -44,7 +44,8 @@ impl MiniCrosswordWebDriver {
         driver.goto(MINI_URL).await?;
         for button_cls in [
             // "purr-blocker-card__button", // Updated Terms of Service
-            "xwd__modal--subtle-button", // Play With Free Account
+            "fides-reject-all-button", // Privacy preferences
+            "xwd__modal--subtle-button" // Play With Free Account
         ] {
             wait_on_entry().await;
             driver
